@@ -39,19 +39,41 @@ export function registerInboundRoutes(fastify) {
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
       <Response>
         <Connect>
-          <Stream url="wss://${request.headers.host}/media-stream" />
+          <Stream url="wss://${request.headers.host}/media-stream">
+            <Parameter name="direction" value="both" />
+            <Parameter name="mediaFormat" value="audio/x-mulaw;rate=8000" />
+          </Stream>
         </Connect>
       </Response>`;
 
     reply.type("text/xml").send(twimlResponse);
   });
-
   // WebSocket route for handling media streams from Twilio
   fastify.register(async (fastifyInstance) => {
     fastifyInstance.get("/media-stream", { websocket: true }, async (connection, req) => {
-      console.info("[Server] Twilio connected to media stream.");
+      console.log("[Server] Twilio connected to media stream.");
 
-      let streamSid = null;
+      let streamSid = null;  // Declare at this scope
+
+      connection.on("message", async (message) => {
+        try {
+          const data = JSON.parse(message);
+
+          if (data.event === 'start') {
+            streamSid = data.start.streamSid;  // Capture streamSid
+            console.log(`[Twilio] Stream started with ID: ${streamSid}`);
+          }
+
+          // Use the captured streamSid in media events
+          if (data.event === 'media' && streamSid) {
+            // Your existing media handling code, but using the captured streamSid
+          }
+
+        } catch (error) {
+          console.error("[Twilio] Error processing message:", error);
+        }
+      });
+
       let elevenLabsWs = null;
 
       try {
@@ -93,15 +115,32 @@ export function registerInboundRoutes(fastify) {
               console.info("[II] Received conversation initiation metadata.");
               break;
             case "audio":
-              if (message.audio_event?.audio_base_64) {
-                const audioData = {
-                  event: "media",
-                  streamSid,
-                  media: {
-                    payload: message.audio_event.audio_base_64,
-                  },
-                };
-                connection.send(JSON.stringify(audioData));
+              if (message.audio_event?.audio_base_64 && streamSid) {
+                // Convert base64 to buffer
+                const audioBuffer = Buffer.from(message.audio_event.audio_base_64, 'base64');
+
+                // Send in smaller chunks (320 bytes is common for μ-law)
+                const chunkSize = 320;
+                for (let i = 0; i < audioBuffer.length; i += chunkSize) {
+                  const chunk = audioBuffer.slice(i, i + chunkSize);
+
+                  const audioData = {
+                    event: "media",
+                    streamSid: streamSid,
+                    media: {
+                      payload: chunk.toString('base64')
+                    }
+                  };
+
+                  // Before sending to Twilio
+                  console.log('Message to Twilio:', {
+                    hasStreamSid: !!streamSid,
+                    messageStructure: JSON.stringify(audioData, null, 2),
+                    payloadLength: message.audio_event.audio_base_64.length
+                  });
+
+                  connection.send(JSON.stringify(audioData));
+                }
               }
               break;
             case "interruption":

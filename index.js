@@ -1,12 +1,17 @@
-import Fastify from "fastify";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import dotenv from "dotenv";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+dotenv.config({ path: `${__dirname}/.env` });
+
+import Fastify from "fastify";
 import fastifyFormBody from "@fastify/formbody";
 import fastifyWs from "@fastify/websocket";
 import { registerInboundRoutes } from './inbound-calls.js';
 import { registerOutboundRoutes } from './outbound-calls.js';
-
-// Load environment variables from .env file
-dotenv.config();
 
 // Initialize Fastify server
 const fastify = Fastify({
@@ -44,5 +49,16 @@ process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
   process.exit(1);
 });
+
+console.log('Full environment check:', {
+  ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+  ELEVENLABS_AGENT_ID: process.env.ELEVENLABS_AGENT_ID,
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+  TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER
+});
+
+// Also log the current working directory
+console.log('Working directory:', process.cwd());
 
 start();
